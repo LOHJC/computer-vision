@@ -68,9 +68,9 @@ if len(objpoints) > 0 and len(imgpoints) > 0:
         'tvecs': [to_list(t) for t in tvecs],
         'reproj_error': float(mean_error)
     }
-    with open('camera_calib.json', 'w') as jf:
+    with open('camera-calib.json', 'w') as jf:
         json.dump(json_data, jf, indent=2)
-    print('saved calibration to camera_calib.json')
+    print('saved calibration to camera-calib.json')
 else:
     print('no valid patterns detected; cannot calibrate')
 
