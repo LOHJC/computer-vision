@@ -6,7 +6,7 @@ IMG_PATH = "imgs"
 
 def stich_images_opencv():
     imgs = []
-    for img in os.listdir(IMG_PATH):
+    for img in sorted(os.listdir(IMG_PATH)):
         img_path = os.path.join(IMG_PATH, img)
         image = cv.imread(img_path)
         imgs.append(image)
