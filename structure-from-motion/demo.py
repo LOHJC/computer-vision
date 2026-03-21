@@ -71,6 +71,8 @@ if __name__ == "__main__":
     feature_detector = cv.SIFT.create()
     matcher = cv.BFMatcher()
     
+    final_pts1 = []
+    final_pts2 = []
     for template_img in feature_imgs:
         template_gray = cv.cvtColor(template_img, cv.COLOR_BGR2GRAY)
         template_kp, template_descriptor = feature_detector.detectAndCompute(template_gray, None)
@@ -148,16 +150,20 @@ if __name__ == "__main__":
             for i in range(len(kp1)):
                 color = (random.randint(0,255), random.randint(0,255), random.randint(0,255))
                 
-                # Point in Image 1
-                pt1 = (int(kp1[i][0]), int(kp1[i][1]))
-                # Point in Image 2 (offset by w1 for side-by-side view)
-                pt2 = (int(kp2[i][0] + w1), int(kp2[i][1]))
+                pt1 = [int(kp1[i][0]), int(kp1[i][1])]
+                pt2 = [int(kp2[i][0]), int(kp2[i][1])]
+
+                final_pts1.append(pt1)
+                final_pts2.append(pt2)
+
+                pt2[0] += w1 # add offset
                 
                 cv.circle(vis, pt1, 5, color, -1)
                 cv.circle(vis, pt2, 5, color, -1)
                 cv.line(vis, pt1, pt2, color, 1)
             
-            plt.imshow(vis)
-            plt.show()
-            
-            # break
+            # plt.imshow(vis)
+            # plt.show()
+        
+    # SFM
+
