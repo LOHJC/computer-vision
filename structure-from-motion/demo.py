@@ -3,6 +3,7 @@ import cv2 as cv
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+import open3d as o3d
 
 IMG_PATH = "./imgs"
 
@@ -34,6 +35,9 @@ if __name__ == "__main__":
         img1 = imgs[i].copy()
         img2 = imgs[i + 1].copy()
 
+        kp_img1 = img1.copy()
+        kp_img2 = img2.copy()
+
         gray1 = cv.cvtColor(img1, cv.COLOR_BGR2GRAY)
         gray2 = cv.cvtColor(img2, cv.COLOR_BGR2GRAY)
 
@@ -55,28 +59,28 @@ if __name__ == "__main__":
         kp1, descriptor1 = feature_detector.detectAndCompute(gray1, None)
         kp2, descriptor2 = feature_detector.detectAndCompute(gray2, None)
 
-        cv.drawKeypoints(img1, kp1, img1)
-        cv.drawKeypoints(img2, kp2, img2)
+        cv.drawKeypoints(kp_img1, kp1, kp_img1)
+        cv.drawKeypoints(kp_img2, kp2, kp_img2)
 
         # sift
-        # matches = matcher.knnMatch(descriptor1, descriptor2, k=2)
-        # good_matches = []
-        # for m, n in matches:
-        #     if m.distance < 0.7 * n.distance:
-        #         good_matches.append([m])
-        # match_res = cv.drawMatchesKnn(img1, kp1, img2, kp2, good_matches, None, flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        matches = matcher.knnMatch(descriptor1, descriptor2, k=2)
+        good_matches = []
+        for m, n in matches:
+            if m.distance < 0.7 * n.distance:
+                good_matches.append([m])
+        match_res = cv.drawMatchesKnn(img1, kp1, img2, kp2, good_matches, None, flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
         
         # orb
-        matches = matcher.match(descriptor1, descriptor2)
-        matches = sorted(matches, key = lambda x:x.distance)
-        match_res = cv.drawMatches(img1, kp1, img2, kp2, matches, None,flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        # matches = matcher.match(descriptor1, descriptor2)
+        # matches = sorted(matches, key = lambda x:x.distance)
+        # match_res = cv.drawMatches(img1, kp1, img2, kp2, matches, None,flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
-        plt.subplot(1,3,1)
-        plt.imshow(img1)
-        plt.subplot(1,3,2)
-        plt.imshow(img2)
-        plt.subplot(1,3,3)
-        plt.imshow(match_res)
-        plt.show()
+        # plt.subplot(1,3,1)
+        # plt.imshow(img1)
+        # plt.subplot(1,3,2)
+        # plt.imshow(img2)
+        # plt.subplot(1,3,3)
+        # plt.imshow(match_res)
+        # plt.show()
 
         break
