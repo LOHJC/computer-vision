@@ -75,12 +75,12 @@ if __name__ == "__main__":
         # matches = sorted(matches, key = lambda x:x.distance)
         # match_res = cv.drawMatches(img1, kp1, img2, kp2, matches, None,flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 
-        # plt.subplot(1,3,1)
-        # plt.imshow(img1)
-        # plt.subplot(1,3,2)
-        # plt.imshow(img2)
-        # plt.subplot(1,3,3)
-        # plt.imshow(match_res)
-        # plt.show()
+        plt.subplot(1,3,1)
+        plt.imshow(img1)
+        plt.subplot(1,3,2)
+        plt.imshow(img2)
+        plt.subplot(1,3,3)
+        plt.imshow(match_res)
+        plt.show()
 
         break
