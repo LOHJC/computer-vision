@@ -2,8 +2,6 @@
 import cv2 as cv
 import numpy as np
 
-# IMG_LEFT_PATH = r"statue_dslr_undistorted\statue\images\dslr_images_undistorted\DSC_0490.JPG"
-# IMG_RIGHT_PATH = r"statue_dslr_undistorted\statue\images\dslr_images_undistorted\DSC_0495.JPG"
 IMG_LEFT_PATH = r"door_dslr_undistorted\door\images\dslr_images_undistorted\DSC_0507.JPG"
 IMG_RIGHT_PATH = r"door_dslr_undistorted\door\images\dslr_images_undistorted\DSC_0501.JPG"
 RESIZE_FACTOR = 0.1
