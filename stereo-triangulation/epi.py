@@ -164,20 +164,83 @@ if __name__ == "__main__":
     # find essential matrix
     essen_matrix = img_right_K.T @ fund_matrix @ img_left_K
     print(f"Essential Matrix:\n{essen_matrix}")
-    pts_left_norm = cv.undistortPoints(
-        np.expand_dims(points_left, axis=1), cameraMatrix=img_left_K, distCoeffs=None
-    )
-    pts_right_norm = cv.undistortPoints(
-        np.expand_dims(points_right, axis=1), cameraMatrix=img_right_K, distCoeffs=None
+    # find rotation and transation matrix
+    _, R, t, pose_mask = cv.recoverPose(
+        essen_matrix, points_left, points_right, cameraMatrix=np.eye(3)
     )
 
-    # Compute using normalized coordinates and identity matrix
-    essen_matrix2, E_mask = cv.findEssentialMat(
-        points1=pts_left_norm,
-        points2=pts_right_norm,
-        cameraMatrix=np.eye(3),
-        method=cv.RANSAC,
-        prob=0.99,
-        threshold=0.001,  # Small threshold because coordinates are normalized
+    use_essen_m2 = False
+    if use_essen_m2:
+        pts_left_norm = cv.undistortPoints(
+            np.expand_dims(points_left, axis=1),
+            cameraMatrix=img_left_K,
+            distCoeffs=None,
+        )
+        pts_right_norm = cv.undistortPoints(
+            np.expand_dims(points_right, axis=1),
+            cameraMatrix=img_right_K,
+            distCoeffs=None,
+        )
+        # Compute using normalized coordinates and identity matrix
+        essen_matrix2, E_mask = cv.findEssentialMat(
+            points1=pts_left_norm,
+            points2=pts_right_norm,
+            cameraMatrix=np.eye(3),
+            method=cv.RANSAC,
+            prob=0.99,
+            threshold=0.001,  # Small threshold because coordinates are normalized
+        )
+        print(f"Essential Matrix (cv.findEssentialMat):\n{essen_matrix2}")
+        points_left = points_left[E_mask.ravel() == 1]
+        points_right = points_right[E_mask.ravel() == 1]
+        print(f"Filtered points - Left: {len(points_left)}, Right: {len(points_right)}")
+
+        # find rotation and transation matrix
+        _, R, t, pose_mask = cv.recoverPose(
+            essen_matrix2, pts_left_norm, pts_right_norm, cameraMatrix=np.eye(3)
+        )
+
+    print(f"Rotation Matrix (R):\n{R}")
+    print(f"Translation Vector (t):\n{t}")
+
+    # run 3d triangulation
+    # Camera 1 (Left) is our world origin reference frame
+    P1 = img_left_K @ np.hstack((np.eye(3), np.zeros((3, 1))))
+
+    # Camera 2 (Right) is transformed by R and t relative to Camera 1
+    P2 = img_right_K @ np.hstack((R, t))
+
+    # Triangulate using original filtered pixel points (not the normalized ones, since K is inside P1/P2)
+    # We reshape points to (2, N) as required by cv.triangulatePoints
+    points_4D = cv.triangulatePoints(P1, P2, points_left.T, points_right.T)
+
+    # Convert Homogeneous coordinates (X, Y, Z, W) to standard 3D Cartesian coordinates (X, Y, Z)
+    points_3D = points_4D[:3, :] / points_4D[3, :]
+    points_3D = points_3D.T  # Final shape: (N, 3)
+
+    print(f"Successfully triangulated {len(points_3D)} points in 3D Space.")
+    print(f"Sample 3D Point Coordinates:\n{points_3D[:5]}")
+
+    filtered_points_3D = points_3D
+
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection="3d")
+
+    # Scatter plot configuration
+    # X = Column 0, Y = Column 1, Z = Column 2
+    ax.scatter(
+        filtered_points_3D[:, 0],
+        filtered_points_3D[:, 1],
+        filtered_points_3D[:, 2],
+        c=filtered_points_3D[:, 2],
     )
-    print(f"Essential Matrix (cv.findEssentialMat):\n{essen_matrix2}")
+
+    ax.set_xlabel("X Axis")
+    ax.set_ylabel("Y Axis")
+    ax.set_zlabel("Z Axis")
+    ax.set_title("Matplotlib 3D Points Visualization")
+
+    # Set initial viewing angle perspective
+    ax.view_init(elev=-90, azim=-90)
+
+    plt.show()
