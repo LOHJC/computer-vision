@@ -3,8 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-IMG_LEFT_PATH = r"ambient-artroom\data\artroom1\ambient\L0\im0e1.png"
-IMG_RIGHT_PATH = r"ambient-artroom\data\artroom1\ambient\L0\im1e1.png"
+IMG_LEFT_PATH = r"ambient-artroom/im0.png"
+IMG_RIGHT_PATH = r"ambient-artroom/im1.png"
 RESIZE_FACTOR = 1.0
 MATCHING_THRESHOLD = 0.5  # 0.7
 
@@ -66,6 +66,9 @@ if __name__ == "__main__":
             flags=cv.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS,
         )
         cv.namedWindow("Matches", cv.WINDOW_NORMAL)
+        cv.namedWindow("Left Image", cv.WINDOW_NORMAL)
+        cv.namedWindow("Right Image", cv.WINDOW_NORMAL)
+
         cv.imshow("Matches", img_matches)
         cv.imshow("Left Image", img_left)
         cv.imshow("Right Image", img_right)
