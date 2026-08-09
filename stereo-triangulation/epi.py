@@ -1,12 +1,37 @@
 import cv2 as cv
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+import re
 
 IMG_LEFT_PATH = r"ambient-artroom/im0.png"
 IMG_RIGHT_PATH = r"ambient-artroom/im1.png"
+CALIB_PATH = r"ambient-artroom/calib.txt"
 RESIZE_FACTOR = 1.0
 MATCHING_THRESHOLD = 0.5  # 0.7
+
+
+# read the calib.txt
+def load_K():
+    with open(CALIB_PATH, "r") as f:
+        lines = f.readlines()
+        cam0_K = None
+        cam1_K = None
+        for line in lines:
+            if "cam0" in line:
+                inner_text = re.search(r"\[(.*?)\]", line).group(1)
+                rows = inner_text.split(";")
+                cam0_K = np.array(
+                    [[float(val) for val in row.split()] for row in rows]
+                ).reshape(3, 3)
+            if "cam1" in line:
+                inner_text = re.search(r"\[(.*?)\]", line).group(1)
+                rows = inner_text.split(";")
+                cam1_K = np.array(
+                    [[float(val) for val in row.split()] for row in rows]
+                ).reshape(3, 3)
+
+            if cam0_K is not None and cam1_K is not None:
+                break
+        return cam0_K, cam1_K
 
 
 def load_image(path, resize_factor=1.0):
@@ -43,6 +68,9 @@ def match(img_left, img_right):
 if __name__ == "__main__":
     img_left = load_image(IMG_LEFT_PATH, resize_factor=RESIZE_FACTOR)
     img_right = load_image(IMG_RIGHT_PATH, resize_factor=RESIZE_FACTOR)
+    img_left_K, img_right_K = load_K()
+    print(f"img_left_K: {img_left_K}")
+    print(f"img_right_K: {img_right_K}")
 
     # match the images
     kp_left, kp_right, good_matches = match(img_left, img_right)
@@ -50,11 +78,11 @@ if __name__ == "__main__":
     # Extract the coordinates of the matched points
     points_left = np.float32([kp_left[m.queryIdx].pt for m in good_matches])
     points_right = np.float32([kp_right[m.trainIdx].pt for m in good_matches])
-    print(f"points_left: {points_left}")
-    print(f"points_right: {points_right}")
+    print(f"points_left: {len(points_left)}")
+    print(f"points_right: {len(points_right)}")
 
     # draw matches
-    draw_match = True
+    draw_match = False
     if draw_match:
         img_matches = cv.drawMatches(
             img_left,
@@ -74,3 +102,7 @@ if __name__ == "__main__":
         cv.imshow("Right Image", img_right)
         cv.waitKey(0)
         cv.destroyAllWindows()
+
+    # find essential matrix and fundamental matrix
+
+    # find rotation and translation
