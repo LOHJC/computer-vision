@@ -1,10 +1,13 @@
 import cv2 as cv
 import numpy as np
 import re
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
-IMG_LEFT_PATH = r"ambient-artroom/im0.png"
-IMG_RIGHT_PATH = r"ambient-artroom/im1.png"
-CALIB_PATH = r"ambient-artroom/calib.txt"
+IMG_ROOT_PATH = "artroom1"
+IMG_LEFT_PATH = f"{IMG_ROOT_PATH}/im0.png"
+IMG_RIGHT_PATH = f"{IMG_ROOT_PATH}/im1.png"
+CALIB_PATH = f"{IMG_ROOT_PATH}/calib.txt"
 RESIZE_FACTOR = 1.0
 MATCHING_THRESHOLD = 0.5  # 0.7
 
@@ -65,6 +68,44 @@ def match(img_left, img_right):
     return kp_left, kp_right, good_matches
 
 
+def draw_epilines(img1, img2, pts1, pts2, lines):
+    img_1_with_point = img1.copy()
+    img_2_with_line = img2.copy()
+
+    cv.namedWindow("Image 1 (Source Point)", cv.WINDOW_NORMAL)
+    cv.namedWindow("Image 2 (Line + Target Point)", cv.WINDOW_NORMAL)
+
+    if len(img_1_with_point.shape) == 2:
+        img_1_with_point = cv.cvtColor(img_1_with_point, cv.COLOR_GRAY2BGR)
+        img_2_with_line = cv.cvtColor(img_2_with_line, cv.COLOR_GRAY2BGR)
+
+    w = img_right.shape[1]  # width of the image
+    MAX_IDX = 20
+    for idx, line in enumerate(lines):
+        if idx >= MAX_IDX:
+            break
+        # 1. Select the first point to visualize as an example
+        a, b, c = line[0]
+        pt1 = pts1[idx]  # The raw 2D pixel coordinate in the left image
+        pt2 = pts2[idx]  # The raw 2D pixel coordinate in the right image
+
+        x0, y0 = 0, int(-c / b)
+        x1, y1 = w, int(-(a * w + c) / b)
+
+        # random color on point
+        pt_color = tuple(np.random.randint(0, 255, 3).tolist())
+        line_color = tuple(np.random.randint(0, 255, 3).tolist())
+        cv.circle(img_1_with_point, (int(pt1[0]), int(pt1[1])), 5, pt_color, -1)
+        # 5. Draw the epipolar line on the RIGHT image (Green line)
+        cv.line(img_2_with_line, (x0, y0), (x1, y1), line_color, 2)
+        cv.circle(img_2_with_line, (int(pt2[0]), int(pt2[1])), 5, pt_color, -1)
+
+    cv.imshow("Image 1 (Source Point)", img_1_with_point)
+    cv.imshow("Image 2 (Line + Target Point)", img_2_with_line)
+    cv.waitKey(0)
+    cv.destroyAllWindows()
+
+
 if __name__ == "__main__":
     img_left = load_image(IMG_LEFT_PATH, resize_factor=RESIZE_FACTOR)
     img_right = load_image(IMG_RIGHT_PATH, resize_factor=RESIZE_FACTOR)
@@ -103,6 +144,40 @@ if __name__ == "__main__":
         cv.waitKey(0)
         cv.destroyAllWindows()
 
-    # find essential matrix and fundamental matrix
+    # find fundamental matrix
+    fund_matrix, mask = cv.findFundamentalMat(
+        points_left, points_right, cv.FM_RANSAC, 3, 0.99
+    )
+    print(f"Fundamental Matrix:\n{fund_matrix}")
+    points_left = points_left[mask.ravel() == 1]
+    points_right = points_right[mask.ravel() == 1]
+    print(f"Filtered points - Left: {len(points_left)}, Right: {len(points_right)}")
 
-    # find rotation and translation
+    draw_epiline = True
+    if draw_epiline:
+        # Compute epipolar lines for the right image
+        lines_right = cv.computeCorrespondEpilines(points_left, 1, fund_matrix)
+        draw_epilines(img_left, img_right, points_left, points_right, lines_right)
+
+        # do the epipolar search
+
+    # find essential matrix
+    essen_matrix = img_right_K.T @ fund_matrix @ img_left_K
+    print(f"Essential Matrix:\n{essen_matrix}")
+    pts_left_norm = cv.undistortPoints(
+        np.expand_dims(points_left, axis=1), cameraMatrix=img_left_K, distCoeffs=None
+    )
+    pts_right_norm = cv.undistortPoints(
+        np.expand_dims(points_right, axis=1), cameraMatrix=img_right_K, distCoeffs=None
+    )
+
+    # Compute using normalized coordinates and identity matrix
+    essen_matrix2, E_mask = cv.findEssentialMat(
+        points1=pts_left_norm,
+        points2=pts_right_norm,
+        cameraMatrix=np.eye(3),
+        method=cv.RANSAC,
+        prob=0.99,
+        threshold=0.001,  # Small threshold because coordinates are normalized
+    )
+    print(f"Essential Matrix (cv.findEssentialMat):\n{essen_matrix2}")
