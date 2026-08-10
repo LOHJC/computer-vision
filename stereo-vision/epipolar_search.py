@@ -4,7 +4,7 @@ import re
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-IMG_ROOT_PATH = "bandsaw1"
+IMG_ROOT_PATH = "artroom1"
 IMG_LEFT_PATH = f"{IMG_ROOT_PATH}/im0.png"
 IMG_RIGHT_PATH = f"{IMG_ROOT_PATH}/im1.png"
 CALIB_PATH = f"{IMG_ROOT_PATH}/calib.txt"
