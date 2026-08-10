@@ -15,5 +15,4 @@
 ## reference
 ### epipolar geometry
 - https://docs.opencv.org/4.x/da/de9/tutorial_py_epipolar_geometry.html
-
-### 3d triangulation
+- https://web.stanford.edu/class/cs231a/course_notes/03-epipolar-geometry.pdf

@@ -4,7 +4,7 @@ import re
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
-IMG_ROOT_PATH = "artroom1"
+IMG_ROOT_PATH = "bandsaw1"
 IMG_LEFT_PATH = f"{IMG_ROOT_PATH}/im0.png"
 IMG_RIGHT_PATH = f"{IMG_ROOT_PATH}/im1.png"
 CALIB_PATH = f"{IMG_ROOT_PATH}/calib.txt"
@@ -169,7 +169,7 @@ if __name__ == "__main__":
         essen_matrix, points_left, points_right, cameraMatrix=np.eye(3)
     )
 
-    use_essen_m2 = False
+    use_essen_m2 = True
     if use_essen_m2:
         pts_left_norm = cv.undistortPoints(
             np.expand_dims(points_left, axis=1),
