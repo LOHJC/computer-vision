@@ -14,13 +14,14 @@
 
 ### block matching
 1. pre-requisite: need to rectify the images
-2. 
+2. form the disparity map by block matching
+3. form the depth map using the disparity map
 
 ## dataset
-- https://www.eth3d.net/datasets
-- http://lightfield.stanford.edu/lfs.html
-- https://github.com/opencv/opencv/blob/4.x/samples/data/
 - https://vision.middlebury.edu/stereo/data/scenes2021/
+- ~~https://www.eth3d.net/datasets~~
+- ~~http://lightfield.stanford.edu/lfs.html~~
+- ~~https://github.com/opencv/opencv/blob/4.x/samples/data/~~
 
 ## reference
 ### epipolar geometry

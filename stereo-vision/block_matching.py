@@ -49,6 +49,18 @@ def load_baseline():
     return baseline
 
 
+def load_disp_min_max():
+    vmin, vmax = None, None
+    with open(CALIB_PATH, "r") as f:
+        lines = f.readlines()
+        for line in lines:
+            if "vmin" in line:
+                vmin = float(line.replace("vmin=", ""))
+            if "vmax" in line:
+                vmax = float(line.replace("vmax=", ""))
+    return vmin, vmax
+
+
 def load_image(path, resize_factor=1.0):
     img = cv.imread(path, cv.IMREAD_GRAYSCALE)
     if resize_factor != 1.0:
@@ -80,138 +92,114 @@ def match(img_left, img_right):
     return kp_left, kp_right, good_matches
 
 
-def draw_epilines(img1, img2, pts1, pts2, lines):
-    img_1_with_point = img1.copy()
-    img_2_with_line = img2.copy()
+def block_matching(img_left, img_right, window_size=101, max_disp=64):
+    h, w = img_left.shape
+    half = window_size // 2
+    disparity = np.zeros((h, w), dtype=np.float32)
 
-    cv.namedWindow("Image 1 (Source Point)", cv.WINDOW_NORMAL)
-    cv.namedWindow("Image 2 (Line + Target Point)", cv.WINDOW_NORMAL)
+    for y in range(half, h - half):
+        for x in range(half, w - half):
+            # left patch
+            patch_left = img_left[y - half : y + half + 1, x - half : x + half + 1]
 
-    if len(img_1_with_point.shape) == 2:
-        img_1_with_point = cv.cvtColor(img_1_with_point, cv.COLOR_GRAY2BGR)
-        img_2_with_line = cv.cvtColor(img_2_with_line, cv.COLOR_GRAY2BGR)
+            best_score = float("inf")
+            best_disp = 0
 
-    w = img_right.shape[1]  # width of the image
-    MAX_IDX = 20
-    for idx, line in enumerate(lines):
-        if idx >= MAX_IDX:
-            break
-        # 1. Select the first point to visualize as an example
-        a, b, c = line[0]
-        if idx < len(pts1):
-            pt1 = pts1[idx]  # The raw 2D pixel coordinate in the left image
-        else:
-            pt1 = None
-        if idx < len(pts2):
-            pt2 = pts2[idx]  # The raw 2D pixel coordinate in the right image
-        else:
-            pt2 = None
+            # search disparity range
+            for d in range(max_disp):
+                xr = x - d
+                if xr - half < 0:
+                    break
+                patch_right = img_right[
+                    y - half : y + half + 1, xr - half : xr + half + 1
+                ]
 
-        x0, y0 = 0, int(-c / b)
-        x1, y1 = w, int(-(a * w + c) / b)
+                # SSD cost
+                diff = patch_left.astype(np.float32) - patch_right.astype(np.float32)
+                score = np.sum(diff * diff)
 
-        # random color on point
-        pt_color = tuple(np.random.randint(0, 255, 3).tolist())
-        line_color = tuple(np.random.randint(0, 255, 3).tolist())
-        if pt1 is not None:
-            cv.circle(img_1_with_point, (int(pt1[0]), int(pt1[1])), 10, pt_color, -1)
-        # 5. Draw the epipolar line on the RIGHT image (Green line)
-        cv.line(img_2_with_line, (x0, y0), (x1, y1), line_color, 2)
-        if pt2 is not None:
-            cv.circle(img_2_with_line, (int(pt2[0]), int(pt2[1])), 10, pt_color, -1)
+                if score < best_score:
+                    best_score = score
+                    best_disp = d
 
-    cv.imshow("Image 1 (Source Point)", img_1_with_point)
-    cv.imshow("Image 2 (Line + Target Point)", img_2_with_line)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
+            disparity[y, x] = best_disp
+
+    return disparity
 
 
-def epipolar_search(img_left, img_right, fund_mat, left_seed_points):
-    img_left_copy = img_left.copy()
-    img_right_copy = img_right.copy()
+def block_matching_vectorized(
+    img_left, img_right, window_size=15, min_disp=0, max_disp=64
+):
+    h, w = img_left.shape
+    disparity = np.zeros((h, w), dtype=np.float32)
+    min_ssd = np.full((h, w), float("inf"), dtype=np.float32)
 
-    if len(img_left_copy.shape) == 2:
-        img_left_copy = cv.cvtColor(img_left_copy, cv.COLOR_GRAY2BGR)
-        img_right_copy = cv.cvtColor(img_right_copy, cv.COLOR_GRAY2BGR)
+    # 1. Convert to float32 once to avoid overhead inside the loop
+    img_l_f = img_left.astype(np.float32)
+    img_r_f = img_right.astype(np.float32)
 
-    h_left, w_left = img_left.shape[:2]
-    h_right, w_right = img_right.shape[:2]
-    patch_size = 10
-    matches = {}  # pt_left, pt_right
-    draw_epiline = False
-    for pt_left in left_seed_points:
-        x, y = pt_left
-        left_pos = (x, y)
-        half = patch_size // 2
-        if x - half < 0 or x + half >= w_left or y - half < 0 or y + half >= h_left:
-            continue
-        x0, y0 = (
-            max(0, x - half),
-            max(0, y - half),
+    # 2. Only loop over the disparities (e.g., 64 iterations instead of millions)
+    for d in range(min_disp, max_disp + 1):
+        # Shift the right image to the right by 'd' pixels
+        # Fill empty padding on the left edge with zeros
+        shifted_right = np.zeros_like(img_r_f)
+        shifted_right[:, d:] = img_r_f[:, : w - d]
+
+        # Calculate raw squared pixel differences
+        pixel_diff_sq = (img_l_f - shifted_right) ** 2
+
+        # 3. Use a Box Filter to aggregate patch costs instantly!
+        # This replaces the nested loops over the window_size patch
+        ssd_map = cv.boxFilter(
+            pixel_diff_sq, -1, (window_size, window_size), normalize=False
         )
-        x1, y1 = (
-            min(img_right.shape[1], x + half),
-            min(img_right.shape[0], y + half),
-        )
-        # form the initial left patch
-        patch_left = img_left[y0:y1, x0:x1]
 
-        # form the potential candidates right patches
-        lines_right = cv.computeCorrespondEpilines(np.array([pt_left]), 1, fund_mat)
-        if draw_epiline:
-            draw_epilines(img_left, img_right, [left_pos], [], lines_right)
-        candidates = []
-        for idx, line in enumerate(lines_right):
-            a, b, c = line[0]
+        # 4. Update pixel coordinates where this disparity yields a better score
+        better_mask = ssd_map < min_ssd
+        min_ssd[better_mask] = ssd_map[better_mask]
+        disparity[better_mask] = d
 
-            for x in range(0, w_right):
-                y = int(-(a * x + c) / b)
-                if 0 <= y < img_right.shape[0]:
-                    candidates.append((x, y))
+    # 5. Clean up boundary margins where windows fell off the image frame
+    half = window_size // 2
+    disparity[:half, :] = 0
+    disparity[-half:, :] = 0
+    disparity[:, :half] = 0
+    disparity[:, -half:] = 0
 
-        # find the best match among right patches
-        score_thres = 0.7
-        best_score, best_pt_right = float("-inf"), None
-        for x, y in candidates:
-            half = patch_size // 2
-            if (
-                x - half < 0
-                or x + half >= w_right
-                or y - half < 0
-                or y + half >= h_right
-            ):
-                continue
-            # Extract patch from img_right
-            x0, y0 = (
-                max(0, x - half),
-                max(0, y - half),
-            )
-            x1, y1 = (
-                min(img_right.shape[1], x + half),
-                min(img_right.shape[0], y + half),
-            )
-            cand_patch = img_right[y0:y1, x0:x1]
-            score = np.corrcoef(patch_left.flatten(), cand_patch.flatten())[0, 1]
-            if score > score_thres and score > best_score:
-                best_score = score
-                best_pt_right = (x, y)
+    return disparity
 
-        if best_pt_right is not None:
-            matches[left_pos] = best_pt_right
 
-            pt_color = tuple(np.random.randint(0, 255, 3).tolist())
-            cv.circle(img_left_copy, pt_left, 10, pt_color, -1)
-            cv.circle(img_right_copy, best_pt_right, 10, pt_color, -1)
+def compute_depth_map(disparity, focal_length, baseline, disp_min, disp_max):
+    # Initialize a blank depth map with zeros
+    depth_map = np.zeros_like(disparity, dtype=np.float32)
 
-    cv.namedWindow("Left Image with Matches", cv.WINDOW_NORMAL)
-    cv.namedWindow("Right Image with Matches", cv.WINDOW_NORMAL)
+    # Identify valid disparity pixels (avoid division by zero or negative noise)
+    valid_mask = (disparity >= disp_min) & (disparity <= disp_max)
 
-    cv.imshow("Left Image with Matches", img_left_copy)
-    cv.imshow("Right Image with Matches", img_right_copy)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
+    # Apply the fundamental stereo equation: Z = (B * f) / d
+    depth_map[valid_mask] = (baseline * focal_length) / disparity[valid_mask]
 
-    print(f"Number of matches found: {len(matches)}")
+    depth_min = (
+        baseline * focal_length
+    ) / disp_max  # (536.62 * 1733.74) / 142 = ~6552 mm
+    depth_max = (
+        baseline * focal_length
+    ) / disp_min  # (536.62 * 1733.74) / 55  = ~16916 mm
+
+    return depth_map, depth_min, depth_max
+
+
+def triangulate_points(points_left, points_right, K_left, K_right, R, T):
+    P1 = K_left @ np.hstack((np.eye(3), np.zeros((3, 1))))
+    P2 = K_right @ np.hstack((R, T))
+
+    points_4d = cv.triangulatePoints(P1, P2, points_left.T, points_right.T)
+
+    # Convert 4D homogeneous coordinates back to 3D Cartesian (x, y, z)
+    points_3d = points_4d[:3, :] / points_4d[3, :]
+
+    # Return shape (N, 3) for clean downstream use
+    return points_3d.T
 
 
 if __name__ == "__main__":
@@ -299,11 +287,40 @@ if __name__ == "__main__":
     img_left_rect = cv.remap(img_left, map0x, map0y, cv.INTER_LINEAR)
     img_right_rect = cv.remap(img_right, map1x, map1y, cv.INTER_LINEAR)
 
-    cv.namedWindow("Left Rectified", cv.WINDOW_NORMAL)
-    cv.namedWindow("Right Rectified", cv.WINDOW_NORMAL)
-    cv.imshow("Left Rectified", img_left_rect)
-    cv.imshow("Right Rectified", img_right_rect)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
+    show_rectified = False
+    if show_rectified:
+        cv.namedWindow("Left Rectified", cv.WINDOW_NORMAL)
+        cv.namedWindow("Right Rectified", cv.WINDOW_NORMAL)
+        cv.imshow("Left Rectified", img_left_rect)
+        cv.imshow("Right Rectified", img_right_rect)
+        cv.waitKey(0)
+        cv.destroyAllWindows()
 
     # block matching
+    disp_min, disp_max = load_disp_min_max()
+    disparity = block_matching_vectorized(
+        img_left_rect,
+        img_right_rect,
+        window_size=21,
+        min_disp=int(disp_min),
+        max_disp=int(disp_max),
+    )
+    plt.imshow(disparity)
+    plt.colorbar()
+    plt.show()
+
+    # form 3d depth map
+    focal_length = img_left_K[0, 0]
+    baseline = load_baseline()
+    # if baseline > 10:
+    #     baseline /= 1000
+    print(f"Focal Length: {focal_length}")
+    print(f"Baseline: {baseline}")
+
+    # Generate your depth grid
+    depth, depth_min, depth_max = compute_depth_map(
+        disparity, focal_length, baseline, disp_min, disp_max
+    )
+    plt.imshow(depth, cmap="jet_r", vmin=depth_min, vmax=depth_max)
+    plt.colorbar(label="Depth (mm)")
+    plt.show()
