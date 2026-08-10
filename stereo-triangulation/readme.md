@@ -6,6 +6,12 @@
 3. compute the rotation and translation matrix
 4. run 3d trianglulation
 
+### epipolar search
+1. pre-requisite: need to have fundamental matrix
+2. find the seed point in left image
+3. form the epiline in right image
+4. search for the best matches along the epiline in the right image
+
 ## dataset
 - https://www.eth3d.net/datasets
 - http://lightfield.stanford.edu/lfs.html
