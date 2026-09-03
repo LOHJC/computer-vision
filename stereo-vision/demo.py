@@ -68,6 +68,19 @@ def match(img_left, img_right):
     return kp_left, kp_right, good_matches
 
 
+def triangulate_points(points_left, points_right, K_left, K_right, R, T):
+    P1 = K_left @ np.hstack((np.eye(3), np.zeros((3, 1))))
+    P2 = K_right @ np.hstack((R, T))
+
+    points_4d = cv.triangulatePoints(P1, P2, points_left.T, points_right.T)
+
+    # Convert 4D homogeneous coordinates back to 3D Cartesian (x, y, z)
+    points_3d = points_4d[:3, :] / points_4d[3, :]
+
+    # Return shape (N, 3) for clean downstream use
+    return points_3d.T
+
+
 def draw_epilines(img1, img2, pts1, pts2, lines):
     img_1_with_point = img1.copy()
     img_2_with_line = img2.copy()
@@ -204,19 +217,9 @@ if __name__ == "__main__":
     print(f"Translation Vector (t):\n{t}")
 
     # run 3d triangulation
-    # Camera 1 (Left) is our world origin reference frame
-    P1 = img_left_K @ np.hstack((np.eye(3), np.zeros((3, 1))))
-
-    # Camera 2 (Right) is transformed by R and t relative to Camera 1
-    P2 = img_right_K @ np.hstack((R, t))
-
-    # Triangulate using original filtered pixel points (not the normalized ones, since K is inside P1/P2)
-    # We reshape points to (2, N) as required by cv.triangulatePoints
-    points_4D = cv.triangulatePoints(P1, P2, points_left.T, points_right.T)
-
-    # Convert Homogeneous coordinates (X, Y, Z, W) to standard 3D Cartesian coordinates (X, Y, Z)
-    points_3D = points_4D[:3, :] / points_4D[3, :]
-    points_3D = points_3D.T  # Final shape: (N, 3)
+    points_3D = triangulate_points(
+        points_left, points_right, img_left_K, img_right_K, R, t
+    )
 
     print(f"Successfully triangulated {len(points_3D)} points in 3D Space.")
     print(f"Sample 3D Point Coordinates:\n{points_3D[:5]}")
