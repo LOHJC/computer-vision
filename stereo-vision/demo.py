@@ -157,61 +157,59 @@ if __name__ == "__main__":
         cv.waitKey(0)
         cv.destroyAllWindows()
 
-    # find fundamental matrix
+    # find fundamental matrix and essential matrix
     fund_matrix, mask = cv.findFundamentalMat(
         points_left, points_right, cv.FM_RANSAC, 3, 0.99
     )
-    print(f"Fundamental Matrix:\n{fund_matrix}")
-    points_left = points_left[mask.ravel() == 1]
-    points_right = points_right[mask.ravel() == 1]
-    print(f"Filtered points - Left: {len(points_left)}, Right: {len(points_right)}")
+    # Pre-undistort / normalize points using the actual K matrices
+    pts1_norm = cv.undistortPoints(
+        np.expand_dims(points_left, axis=1),
+        cameraMatrix=img_left_K,
+        distCoeffs=None,
+    ).squeeze(axis=1)
 
-    draw_epiline = True
+    pts2_norm = cv.undistortPoints(
+        np.expand_dims(points_right, axis=1),
+        cameraMatrix=img_right_K,
+        distCoeffs=None,
+    ).squeeze(axis=1)
+
+    # find matrices
+    use_method = 1
+
+    if use_method == 1:
+        E_mat = img_left_K.T @ fund_matrix @ img_right_K
+        valid_idx = mask.ravel() == 1
+
+    elif use_method == 2:
+        # Compute Essential matrix directly using normalized coordinates
+        E_mat, E_mask = cv.findEssentialMat(
+            points1=pts1_norm,
+            points2=pts2_norm,
+            cameraMatrix=np.eye(3),
+            method=cv.RANSAC,
+            prob=0.99,
+            threshold=0.001,
+        )
+        valid_idx = E_mask.ravel() == 1
+
+    # Synchronize all arrays using the filtering mask
+    points_left = points_left[valid_idx]
+    points_right = points_right[valid_idx]
+    pts1_norm = pts1_norm[valid_idx]
+    pts2_norm = pts2_norm[valid_idx]
+    print(f"Filtered clean matches: {len(points_left)}")
+
+    draw_epiline = False
     if draw_epiline:
         # Compute epipolar lines for the right image
         lines_right = cv.computeCorrespondEpilines(points_left, 1, fund_matrix)
         draw_epilines(img_left, img_right, points_left, points_right, lines_right)
 
-        # do the epipolar search
-
-    # find essential matrix
-    essen_matrix = img_right_K.T @ fund_matrix @ img_left_K
-    print(f"Essential Matrix:\n{essen_matrix}")
     # find rotation and transation matrix
     _, R, t, pose_mask = cv.recoverPose(
-        essen_matrix, points_left, points_right, cameraMatrix=np.eye(3)
+        E_mat, pts1_norm, pts2_norm, cameraMatrix=np.eye(3)
     )
-
-    use_essen_m2 = True
-    if use_essen_m2:
-        pts_left_norm = cv.undistortPoints(
-            np.expand_dims(points_left, axis=1),
-            cameraMatrix=img_left_K,
-            distCoeffs=None,
-        )
-        pts_right_norm = cv.undistortPoints(
-            np.expand_dims(points_right, axis=1),
-            cameraMatrix=img_right_K,
-            distCoeffs=None,
-        )
-        # Compute using normalized coordinates and identity matrix
-        essen_matrix2, E_mask = cv.findEssentialMat(
-            points1=pts_left_norm,
-            points2=pts_right_norm,
-            cameraMatrix=np.eye(3),
-            method=cv.RANSAC,
-            prob=0.99,
-            threshold=0.001,  # Small threshold because coordinates are normalized
-        )
-        print(f"Essential Matrix (cv.findEssentialMat):\n{essen_matrix2}")
-        points_left = points_left[E_mask.ravel() == 1]
-        points_right = points_right[E_mask.ravel() == 1]
-        print(f"Filtered points - Left: {len(points_left)}, Right: {len(points_right)}")
-
-        # find rotation and transation matrix
-        _, R, t, pose_mask = cv.recoverPose(
-            essen_matrix2, pts_left_norm, pts_right_norm, cameraMatrix=np.eye(3)
-        )
 
     print(f"Rotation Matrix (R):\n{R}")
     print(f"Translation Vector (t):\n{t}")
@@ -224,7 +222,10 @@ if __name__ == "__main__":
     print(f"Successfully triangulated {len(points_3D)} points in 3D Space.")
     print(f"Sample 3D Point Coordinates:\n{points_3D[:5]}")
 
-    filtered_points_3D = points_3D
+    median_z = np.median(points_3D[:, 2])
+    std_z = np.std(points_3D[:, 2])
+    good_depth_mask = (points_3D[:, 2] > 0) & (points_3D[:, 2] < median_z + 2 * std_z)
+    filtered_points_3D = points_3D[good_depth_mask]
 
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection="3d")
