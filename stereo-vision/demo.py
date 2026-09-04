@@ -175,7 +175,7 @@ if __name__ == "__main__":
     ).squeeze(axis=1)
 
     # find matrices
-    use_method = 1
+    use_method = 2
 
     if use_method == 1:
         E_mat = img_left_K.T @ fund_matrix @ img_right_K
