@@ -11,7 +11,7 @@ MATCHING_THRESHOLD = 0.5  # 0.7
 
 
 def auto_select_pose_and_points(
-    points_left, points_right, pts1_norm, pts2_norm, img_left_K, img_right_K
+    pts_1, pts_2, pts1_norm, pts2_norm, img_left_K, img_right_K
 ):
     """
     Evaluates both uncalibrated (Method 1) and calibrated (Method 2) pipelines.
@@ -23,9 +23,7 @@ def auto_select_pose_and_points(
     # PIPELINE 1: Method 1 (Fundamental -> Essential)
     # ==========================================
     try:
-        fund_matrix, mask1 = cv.findFundamentalMat(
-            points_left, points_right, cv.FM_RANSAC, 3, 0.99
-        )
+        fund_matrix, mask1 = cv.findFundamentalMat(pts_1, pts_2, cv.FM_RANSAC, 3, 0.99)
         E_mat1 = img_left_K.T @ fund_matrix @ img_right_K
 
         valid1 = mask1.ravel() == 1
@@ -36,8 +34,8 @@ def auto_select_pose_and_points(
         # Triangulate
         valid_pose1 = pose_mask1.ravel() == 255
         p3D_1 = triangulate_points(
-            points_left[valid1][valid_pose1],
-            points_right[valid1][valid_pose1],
+            pts_1[valid1][valid_pose1],
+            pts_2[valid1][valid_pose1],
             img_left_K,
             img_right_K,
             R1,
@@ -75,8 +73,8 @@ def auto_select_pose_and_points(
         # Triangulate
         valid_pose2 = pose_mask2.ravel() == 255
         p3D_2 = triangulate_points(
-            points_left[valid2][valid_pose2],
-            points_right[valid2][valid_pose2],
+            pts_1[valid2][valid_pose2],
+            pts_2[valid2][valid_pose2],
             img_left_K,
             img_right_K,
             R2,
@@ -153,11 +151,11 @@ def auto_select_pose_and_points(
     )
 
 
-def triangulate_points(points_left, points_right, K_left, K_right, R, T):
+def triangulate_points(pts_1, pts_2, K_left, K_right, R, T):
     P1 = K_left @ np.hstack((np.eye(3), np.zeros((3, 1))))
     P2 = K_right @ np.hstack((R, T))
 
-    points_4d = cv.triangulatePoints(P1, P2, points_left.T, points_right.T)
+    points_4d = cv.triangulatePoints(P1, P2, pts_1.T, pts_2.T)
 
     # Convert 4D homogeneous coordinates back to 3D Cartesian (x, y, z)
     points_3d = points_4d[:3, :] / points_4d[3, :]
