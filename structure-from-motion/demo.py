@@ -454,6 +454,8 @@ if __name__ == "__main__":
                 # update the next ref
                 ref_img_next = img_next.copy()
                 ref_gray_next = gray_next.copy()
+                R_ref = R2.copy()
+                t_ref = t2.copy()
 
             print(
                 f"Point cloud expanded! Total tracked 3D points now: {len(clean_points_3d)}"
