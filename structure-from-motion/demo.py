@@ -7,7 +7,150 @@ IMG_PATH = "./viking"
 K = np.matrix("523.81 0.00 252.00; 0.00 523.81 336.00; 0.00 0.00 1.00")
 
 
-MATCHING_THRESHOLD = 0.7  # 0.7
+MATCHING_THRESHOLD = 0.5  # 0.7
+
+
+def auto_select_pose_and_points(
+    points_left, points_right, pts1_norm, pts2_norm, img_left_K, img_right_K
+):
+    """
+    Evaluates both uncalibrated (Method 1) and calibrated (Method 2) pipelines.
+    Returns the winning (R, t, points_3D, selected_method) based on structural validity.
+    """
+    results = {}
+
+    # ==========================================
+    # PIPELINE 1: Method 1 (Fundamental -> Essential)
+    # ==========================================
+    try:
+        fund_matrix, mask1 = cv.findFundamentalMat(
+            points_left, points_right, cv.FM_RANSAC, 3, 0.99
+        )
+        E_mat1 = img_left_K.T @ fund_matrix @ img_right_K
+
+        valid1 = mask1.ravel() == 1
+        _, R1, t1, pose_mask1 = cv.recoverPose(
+            E_mat1, pts1_norm[valid1], pts2_norm[valid1], cameraMatrix=np.eye(3)
+        )
+
+        # Triangulate
+        valid_pose1 = pose_mask1.ravel() == 255
+        p3D_1 = triangulate_points(
+            points_left[valid1][valid_pose1],
+            points_right[valid1][valid_pose1],
+            img_left_K,
+            img_right_K,
+            R1,
+            t1,
+        )
+
+        results[1] = {
+            "R": R1,
+            "t": t1,
+            "p3D": p3D_1,
+            "inliers": len(p3D_1),
+            "E": E_mat1,
+        }
+    except Exception:
+        results[1] = {"inliers": 0, "E": None}  # Failed completely
+
+    # ==========================================
+    # PIPELINE 2: Method 2 (Direct Essential Mat)
+    # ==========================================
+    try:
+        E_mat2, mask2 = cv.findEssentialMat(
+            points1=pts1_norm,
+            points2=pts2_norm,
+            cameraMatrix=np.eye(3),
+            method=cv.RANSAC,
+            prob=0.99,
+            threshold=0.001,
+        )
+
+        valid2 = mask2.ravel() == 1
+        _, R2, t2, pose_mask2 = cv.recoverPose(
+            E_mat2, pts1_norm[valid2], pts2_norm[valid2], cameraMatrix=np.eye(3)
+        )
+
+        # Triangulate
+        valid_pose2 = pose_mask2.ravel() == 255
+        p3D_2 = triangulate_points(
+            points_left[valid2][valid_pose2],
+            points_right[valid2][valid_pose2],
+            img_left_K,
+            img_right_K,
+            R2,
+            t2,
+        )
+
+        results[2] = {
+            "R": R2,
+            "t": t2,
+            "p3D": p3D_2,
+            "inliers": len(p3D_2),
+            "E": E_mat2,
+        }
+    except Exception:
+        results[2] = {"inliers": 0, "E": None}
+
+    # ==========================================
+    # SCORING & SELECTION ENGINE
+    # ==========================================
+    scores = {1: -100, 2: -100}  # Initialize low scores
+
+    for method_id in [1, 2]:
+        data = results[method_id]
+        if data["inliers"] < 8:  # Absolute minimum points required for stable 3D shape
+            continue
+
+        z_depths = data["p3D"][:, 2]
+
+        # Metric A: Positive Depth Check (Chirality)
+        positive_depth_ratio = np.sum(z_depths > 0) / len(z_depths)
+        if (
+            positive_depth_ratio < 0.85
+        ):  # If more than 15% of points are behind the camera, disqualify
+            continue
+
+        # Metric B: Depth Spread (Detects the collapsed clump/smudge bug)
+        # We look at the Standard Deviation of depth relative to its Median value
+        median_z = np.median(z_depths)
+        std_z = np.std(z_depths)
+        relative_spread = std_z / (median_z + 1e-6)
+
+        # Compute final score
+        # A good reconstruction has high inlier count AND a natural structural distribution (relative_spread > 0.05)
+        if (
+            0.01 < relative_spread < 5.0
+        ):  # Disqualify collapsed clusters (<0.01) or exploding inf values (>5.0)
+            scores[method_id] = data[
+                "inliers"
+            ]  # Base score is number of valid structured points
+        else:
+            scores[method_id] = (
+                data["inliers"] * 0.01
+            )  # Heavily penalize structural failures
+
+    # Pick the winner
+    best_method = max(scores, key=scores.get)
+
+    # Fallback to prevent crash if both methods scored terribly
+    if scores[best_method] < 0:
+        print(
+            "⚠️ WARNING: Both initialization methods failed geometric verification. Defaulting to Method 1."
+        )
+        best_method = 1
+
+    print(
+        f"Decision Engine chosen: METHOD {best_method} (Score M1: {scores[1]:.1f}, Score M2: {scores[2]:.1f})"
+    )
+    return (
+        results[best_method]["E"],
+        results[best_method]["R"],
+        results[best_method]["t"],
+        results[best_method]["p3D"],
+        best_method,
+    )
 
 
 def triangulate_points(points_left, points_right, K_left, K_right, R, T):
@@ -55,7 +198,7 @@ if __name__ == "__main__":
         imgs.append(img)
 
     for i in range(len(imgs) - 1):
-        img1 = imgs[i + 0].copy()
+        img1 = imgs[i].copy()
         img2 = imgs[i + 1].copy()
 
         kp_img1 = img1.copy()
@@ -72,7 +215,7 @@ if __name__ == "__main__":
         print(f"points2: {len(points2)}")
 
         # draw matches
-        draw_match = False
+        draw_match = True
         if draw_match:
             img_matches = cv.drawMatches(
                 img1,
@@ -100,36 +243,8 @@ if __name__ == "__main__":
             cameraMatrix=K,
             distCoeffs=None,
         )
-        fund_matrix, mask = cv.findFundamentalMat(
-            points1, points2, cv.FM_RANSAC, 3, 0.99
-        )
-
-        if use_method == 1:
-            E_mat = K.T @ fund_matrix @ K
-            valid_idx = mask.ravel() == 1
-
-        elif use_method == 2:
-            # Compute Essential matrix directly using normalized coordinates
-            E_mat, E_mask = cv.findEssentialMat(
-                points1=pts1_norm,
-                points2=pts2_norm,
-                cameraMatrix=np.eye(3),
-                method=cv.RANSAC,
-                prob=0.99,
-                threshold=0.001,
-            )
-            valid_idx = E_mask.ravel() == 1
-
-        # Synchronize all arrays using the filtering mask
-        points1 = points1[valid_idx]
-        points2 = points2[valid_idx]
-        pts1_norm = pts1_norm[valid_idx]
-        pts2_norm = pts2_norm[valid_idx]
-        print(f"Filtered clean matches: {len(points1)}")
-
-        # find rotation and transation matrix
-        _, R, t, pose_mask = cv.recoverPose(
-            E_mat, pts1_norm, pts2_norm, cameraMatrix=np.eye(3)
+        E_mat, R, t, points_3D, chosen_method = auto_select_pose_and_points(
+            points1, points2, pts1_norm, pts2_norm, K, K
         )
 
         print(f"Essential Matrix:\n{E_mat}")
