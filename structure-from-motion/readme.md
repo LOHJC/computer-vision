@@ -1,4 +1,12 @@
 # stucture from motion (sfm)
+1. find matching points
+2. find init 3d points
+  - same step as [stereo vision](../stereo-vision/readme.md)
+3. use perspective and point (pnp) to find the matching points in next image
+  - basically matching the new 2d into the existing 3d
+4. then triangulate again
+6. [optimization] bundle adjustment 
+5. keep repeating until everthing is done
 
 ## references
 - https://www.youtube.com/watch?v=iJTqlb7gsWY&t
